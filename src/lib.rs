@@ -22,16 +22,23 @@ use raft_proto::{
     Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
 };
 
-struct State<T> {
+struct RaftState<T> {
     term: u64,
+    state: ServerState,
     pub schedule: Arc<Mutex<VecDeque<T>>>,
     pub executing: Arc<Mutex<HashMap<i8, T>>>,
     pub free_nodes: Arc<Mutex<Vec<i8>>>,
     pub log: Arc<Mutex<Vec<(u64, i8, T)>>>,
 }
 
+pub enum ServerState {
+    Follower,
+    Candidate,
+    Leader,
+}
+
 pub struct Consensus<T> {
-    state: State<T>,
+    raft: RaftState<T>,
     clients: Vec<RaftClient<Channel>>,
 }
 
@@ -53,8 +60,9 @@ impl<T: Sync + Send + 'static> Consensus<T> {
         }
 
         // State that is handed over the the server stub on this node
-        let state = State {
+        let raft = RaftState {
             term: 0,
+            state: ServerState::Follower,
             schedule: schedule.clone(),
             executing: executing.clone(),
             free_nodes: free_nodes.clone(),
@@ -64,14 +72,15 @@ impl<T: Sync + Send + 'static> Consensus<T> {
         // Server runs on a background thread and handles calls to the node
         tokio::spawn(async move {
             Server::builder()
-                .add_service(RaftServer::new(state))
+                .add_service(RaftServer::new(raft))
                 .serve(local_addr.parse().unwrap())
                 .await;
         });
 
         Ok(Self {
-            state: State {
+            raft: RaftState {
                 term: 0,
+                state: ServerState::Follower,
                 schedule,
                 executing,
                 free_nodes,
@@ -82,20 +91,20 @@ impl<T: Sync + Send + 'static> Consensus<T> {
     }
 
     pub async fn schedule(&self, next: T) {
-        self.state.schedule.lock().await.push_back(next);
+        self.raft.schedule.lock().await.push_back(next);
     }
 
     pub async fn next(&self) {
-        if let Some(id) = self.state.free_nodes.lock().await.pop() {
-            if let Some(next) = self.state.schedule.lock().await.pop_front() {
-                self.state.executing.lock().await.insert(id, next);
+        if let Some(id) = self.raft.free_nodes.lock().await.pop() {
+            if let Some(next) = self.raft.schedule.lock().await.pop_front() {
+                self.raft.executing.lock().await.insert(id, next);
             }
         }
     }
 }
 
 #[tonic::async_trait]
-impl<T: Sync + Send + 'static> Raft for State<T> {
+impl<T: Sync + Send + 'static> Raft for RaftState<T> {
     async fn request_vote(&self, request:tonic::Request<VoteRequest>) ->Result<tonic::Response<VoteReply>,tonic::Status> {
         Ok(Response::new(VoteReply {
             term: self.term,
