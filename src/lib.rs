@@ -19,10 +19,11 @@ mod raft_proto {
 use raft_proto::{
     raft_client::RaftClient,
     raft_server::{Raft, RaftServer},
-    Byte, Null,
+    Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
 };
 
 struct State<T> {
+    term: u64,
     pub schedule: Arc<Mutex<VecDeque<T>>>,
     pub executing: Arc<Mutex<HashMap<i8, T>>>,
     pub free_nodes: Arc<Mutex<Vec<i8>>>,
@@ -35,10 +36,7 @@ pub struct Consensus<T> {
 }
 
 impl<T: Sync + Send + 'static> Consensus<T> {
-    pub async fn start(
-        local_addr: String,
-        mut nodes: Vec<String>,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub async fn start(local_addr: String, mut nodes: Vec<String>) -> Result<Self, Box<dyn Error>> {
         let (schedule, executing, free_nodes, log) = (
             Arc::new(Mutex::new(VecDeque::new())),
             Arc::new(Mutex::new(HashMap::new())),
@@ -56,6 +54,7 @@ impl<T: Sync + Send + 'static> Consensus<T> {
 
         // State that is handed over the the server stub on this node
         let state = State {
+            term: 0,
             schedule: schedule.clone(),
             executing: executing.clone(),
             free_nodes: free_nodes.clone(),
@@ -72,6 +71,7 @@ impl<T: Sync + Send + 'static> Consensus<T> {
 
         Ok(Self {
             state: State {
+                term: 0,
                 schedule,
                 executing,
                 free_nodes,
@@ -96,6 +96,20 @@ impl<T: Sync + Send + 'static> Consensus<T> {
 
 #[tonic::async_trait]
 impl<T: Sync + Send + 'static> Raft for State<T> {
+    async fn request_vote(&self, request:tonic::Request<VoteRequest>) ->Result<tonic::Response<VoteReply>,tonic::Status> {
+        Ok(Response::new(VoteReply {
+            term: self.term,
+            grant: true,
+        }))
+    }
+
+    async fn append_entries(&self, request:tonic::Request<EntryRequest>) ->Result<tonic::Response<EntryReply>,tonic::Status> {
+        Ok(Response::new(EntryReply {
+            term: self.term,
+            success: true,
+        }))
+    }
+
     async fn join(&self, args: Request<Byte>) -> Result<Response<Null>, Status> {
         Ok(Response::new(Null {}))
     }
