@@ -8,31 +8,43 @@ use std::{
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
+/// Possible server states within a raft cluster
+/// Follower: Can only respond to requests from nodes of cluster
+/// Candidate: Can only request to be elected Leader of cluster
+/// Leader: Operate until node failure, leads updates to state
 pub enum ServerState {
     Follower,
     Candidate,
     Leader,
 }
 
+/// Datastructure to maintain state of cluster over Raft
 pub struct RaftState<T> {
-    term: u64,
+    pub current_term: u64,
+    pub commit_index: u64,
+    pub voted_for: u8,
     state: ServerState,
+    pub id: u8,
     pub schedule: Arc<Mutex<VecDeque<T>>>,
-    pub executing: Arc<Mutex<HashMap<i8, T>>>,
-    pub free_nodes: Arc<Mutex<Vec<i8>>>,
-    pub log: Arc<Mutex<Vec<(u64, i8, T)>>>,
+    pub executing: Arc<Mutex<HashMap<u8, T>>>,
+    pub free_nodes: Arc<Mutex<Vec<u8>>>,
+    pub log: Arc<Mutex<Vec<(u64, u8, T)>>>,
 }
 
 impl<T> RaftState<T> {
     pub fn new(
+        id: u8,
         schedule: Arc<Mutex<VecDeque<T>>>,
-        executing: Arc<Mutex<HashMap<i8, T>>>,
-        free_nodes: Arc<Mutex<Vec<i8>>>,
-        log: Arc<Mutex<Vec<(u64, i8, T)>>>,
+        executing: Arc<Mutex<HashMap<u8, T>>>,
+        free_nodes: Arc<Mutex<Vec<u8>>>,
+        log: Arc<Mutex<Vec<(u64, u8, T)>>>,
     ) -> Self {
         Self {
-            term: 0,
+            current_term: 0,
+            commit_index: 0,
+            voted_for: id,
             state: ServerState::Follower,
+            id,
             schedule,
             executing,
             free_nodes,
@@ -48,7 +60,7 @@ impl<T: Sync + Send + 'static> Raft for RaftState<T> {
         request: tonic::Request<VoteRequest>,
     ) -> Result<tonic::Response<VoteReply>, tonic::Status> {
         Ok(Response::new(VoteReply {
-            term: self.term,
+            term: self.current_term,
             grant: true,
         }))
     }
@@ -58,7 +70,7 @@ impl<T: Sync + Send + 'static> Raft for RaftState<T> {
         request: tonic::Request<EntryRequest>,
     ) -> Result<tonic::Response<EntryReply>, tonic::Status> {
         Ok(Response::new(EntryReply {
-            term: self.term,
+            term: self.current_term,
             success: true,
         }))
     }
