@@ -5,12 +5,11 @@ authors = ["Devdutt Shenoi <devdutt@outlook.in>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "0.2", features = ["macros", "sync", "stream", "time"] }
-tokio-test = "0.2"
+tokio = { version = "1.5", features = ["full"] }
+tokio-test = "0.4"
 bytes = "1"
-async-trait = "0.1"
-tonic = "0.3"
-prost = "0.6"
+tonic = "0.4"
+prost = "0.7"
 
 [build-dependencies]
-tonic-build = "0.3.0"
+tonic-build = "0.4"
