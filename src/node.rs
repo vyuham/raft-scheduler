@@ -3,7 +3,7 @@ use crate::raft_proto::{
     raft_server::{Raft, RaftServer},
     Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
 };
-use std::{cmp::min, error::Error, sync::Arc};
+use std::{cmp::min, collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::{
     transport::{Channel, Server},
@@ -31,22 +31,24 @@ pub struct RaftNode<T> {
     current_term: u64,
     commit_index: Arc<Mutex<u64>>,
     voted_for: u8,
+    votes_recieved: HashMap<u8, bool>,
     state: ServerState,
     id: u8,
     log: Arc<Mutex<Vec<(u64, T)>>>,
-    clients: Vec<RaftClient<Channel>>,
+    cluster: Vec<RaftClient<Channel>>,
 }
 
 impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
-    pub fn new(id: u8, log: Arc<Mutex<Vec<(u64, T)>>>, clients: Vec<RaftClient<Channel>>) -> Self {
+    pub fn new(id: u8, log: Arc<Mutex<Vec<(u64, T)>>>, cluster: Vec<RaftClient<Channel>>) -> Self {
         Self {
             current_term: 0,
             commit_index: Arc::new(Mutex::new(0)),
             voted_for: id,
+            votes_recieved: HashMap::new(),
             state: ServerState::Follower,
             id,
             log,
-            clients,
+            cluster,
         }
     }
 
@@ -62,13 +64,13 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
         nodes.retain(|x| *x != local_addr);
 
         // Generate a list of client stubs to be used in communications later.
-        let mut clients = vec![];
+        let mut cluster = vec![];
         for node in nodes {
-            clients.push(RaftClient::connect(format!("http://{  }", node)).await?);
+            cluster.push(RaftClient::connect(format!("http://{  }", node)).await?);
         }
 
         // State that is handed over the the server stub on this node
-        let raft = Self::new(id, log.clone(), clients.clone());
+        let raft = Self::new(id, log.clone(), cluster.clone());
 
         // Server runs on a background thread and handles calls to the node
         tokio::spawn(async move {
@@ -79,32 +81,23 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
                 .unwrap();
         });
 
-        Ok(Self::new(id, log.clone(), clients))
+        Ok(Self::new(id, log, cluster))
     }
 
-    pub async fn schedule(&mut self, next: T) {
-        let mut res = vec![];
-        for client in self.clients.clone().iter_mut() {
-            let commit_index = *self.commit_index.lock().await;
-            res.push(
-                client
-                    .append_entries(EntryRequest {
-                        term: self.current_term + 1,
-                        id: self.id as u64,
-                        prev_index: commit_index,
-                        prev_term: self.current_term,
-                        entry: next.as_bytes(),
-                        commit_index: commit_index + 1,
-                    })
-                    .await,
-            );
+    async fn start_election(&mut self) {
+        self.voted_for = self.id;
+        self.votes_recieved.insert(self.id, true);
+
+        for node in self.cluster.iter_mut() {
+            let res = node
+                .request_vote(Request::new(VoteRequest {
+                    term: self.current_term + 1,
+                    id: self.id as u64,
+                    last_index: self.log.lock().await.len() as u64,
+                    last_term: self.current_term,
+                }))
+                .await;
         }
-
-        // TODO: Implement schedule()
-    }
-
-    pub async fn next(&self) {
-        // TODO: Implement next()
     }
 }
 
