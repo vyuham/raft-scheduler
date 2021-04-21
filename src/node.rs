@@ -3,8 +3,9 @@ use crate::raft_proto::{
     raft_server::{Raft, RaftServer},
     Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
 };
+use rand::Rng;
 use std::{cmp::min, collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::{Instant, Duration}};
 use tonic::{
     transport::{Channel, Server},
     Request, Response, Status,
@@ -84,6 +85,16 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
         Ok(Self::new(id, log, cluster))
     }
 
+    pub async fn run(&mut self, start: u64, end: u64) {
+        let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
+        loop {
+            if clock.elapsed() > Duration::from_secs(rng.gen_range(start..end)) {
+                clock = Instant::now();
+                self.start_election().await;
+            }
+        }
+    }
+
     async fn start_election(&mut self) {
         self.voted_for = self.id;
         self.votes_recieved.insert(self.id, true);
@@ -156,7 +167,7 @@ impl<T: Sync + Send + 'static> Raft for RaftNode<T> {
         }))
     }
 
-    async fn join(&self, args: Request<Byte>) -> Result<Response<Null>, Status> {
+    async fn join(&self, request: Request<Byte>) -> Result<Response<Null>, Status> {
         Ok(Response::new(Null {}))
     }
 }
