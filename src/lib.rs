@@ -2,7 +2,6 @@
 //! computational tasks that would otherwise be incredibly inefficient on a single system.
 
 mod node;
-mod state;
 
 pub use node::RaftNode;
 
