@@ -1,0 +1,1 @@
+Raft is a simplified implementation of the [raft consensus algorithm](https://raft.github.io).
