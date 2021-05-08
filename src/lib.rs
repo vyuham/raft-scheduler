@@ -3,8 +3,10 @@
 
 mod node;
 
-pub use node::RaftNode;
+pub use node::{RaftNode, RaftData};
 
 mod raft_proto {
     tonic::include_proto!("raft");
 }
+
+pub use raft_proto::raft_client::RaftClient;
