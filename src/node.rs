@@ -55,9 +55,9 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
 
     /// Starts a raft node, consisting of server and client gRPC stubs.
     pub async fn start(
+        id: u8,
         local_addr: String,
         mut nodes: Vec<String>,
-        id: u8,
     ) -> Result<Self, Box<dyn Error>> {
         let log = Arc::new(Mutex::new(vec![]));
 

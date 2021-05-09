@@ -1,6 +1,4 @@
-use std::sync::Arc;
-use raft::{RaftNode, RaftData};
-use tokio::sync::Mutex;
+use raft::node::{RaftNode, RaftData};
 
 struct Exec {}
 
@@ -11,8 +9,12 @@ impl RaftData for Exec {
 }
 
 #[tokio::main]
-async fn main() {
-    let log = Arc::new(Mutex::new(Vec::<(u64, Exec)>::new()));
-    let cluster = vec![];
-    let raft_node = RaftNode::new(0, log, cluster);
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    RaftNode::<Exec>::start(
+        0,
+        "[::1]:50052".to_string(),
+        vec![],
+    ).await?.run(0, 10).await;
+
+    Ok(())
 }
