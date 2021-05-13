@@ -36,11 +36,11 @@ pub struct RaftNode<T> {
     state: ServerState,
     id: u8,
     log: Arc<Mutex<Vec<(u64, T)>>>,
-    cluster: Vec<RaftClient<Channel>>,
+    cluster: Vec<String>,
 }
 
 impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
-    pub fn new(id: u8, log: Arc<Mutex<Vec<(u64, T)>>>, cluster: Vec<RaftClient<Channel>>) -> Self {
+    pub fn new(id: u8, log: Arc<Mutex<Vec<(u64, T)>>>, cluster: Vec<String>) -> Self {
         Self {
             current_term: 0,
             commit_index: Arc::new(Mutex::new(0)),
@@ -64,14 +64,8 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
         // Keep addr of all nodes but the current one in directory.
         nodes.retain(|x| *x != local_addr);
 
-        // Generate a list of client stubs to be used in communications later.
-        let mut cluster = vec![];
-        for node in nodes {
-            cluster.push(RaftClient::connect(format!("http://{  }", node)).await?);
-        }
-
         // State that is handed over the the server stub on this node
-        let raft = Self::new(id, log.clone(), cluster.clone());
+        let raft = Self::new(id, log.clone(), nodes.clone());
 
         // Server runs on a background thread and handles calls to the node
         tokio::spawn(async move {
@@ -82,25 +76,25 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
                 .unwrap();
         });
 
-        Ok(Self::new(id, log, cluster))
+        Ok(Self::new(id, log, nodes))
     }
 
-    pub async fn run(&mut self, start: u64, end: u64) {
+    pub async fn run(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
         loop {
             if clock.elapsed() > Duration::from_secs(rng.gen_range(start..end)) {
                 clock = Instant::now();
-                self.start_election().await;
+                self.start_election().await?;
             }
         }
     }
 
-    async fn start_election(&mut self) {
+    async fn start_election(&mut self) -> Result<(), Box<dyn Error>> {
         self.voted_for = self.id;
         self.votes_recieved.insert(self.id, true);
 
         for node in self.cluster.iter_mut() {
-            let res = node
+            let res = RaftClient::connect(format!("http://{  }", node)).await?
                 .request_vote(Request::new(VoteRequest {
                     term: self.current_term + 1,
                     id: self.id as u64,
@@ -109,6 +103,8 @@ impl<T: RaftData + Sync + Send + 'static> RaftNode<T> {
                 }))
                 .await;
         }
+
+        Ok(())
     }
 }
 
