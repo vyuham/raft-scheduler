@@ -1,4 +1,4 @@
-use raft::node::{RaftNode, RaftData};
+use raft::node::{RaftData, RaftNode};
 
 struct Exec {}
 
@@ -10,11 +10,10 @@ impl RaftData for Exec {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    RaftNode::<Exec>::start(
-        0,
-        "[::1]:50052".to_string(),
-        vec![],
-    ).await?.run(0, 10).await;
+    RaftNode::<Exec>::start(0, "[::1]:50052".to_string, vec![])
+        .await?
+        .run(0, 10)
+        .await;
 
     Ok(())
 }
