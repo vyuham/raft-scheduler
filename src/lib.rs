@@ -3,7 +3,7 @@
 
 mod config;
 pub mod node;
-mod scheduler;
+pub mod scheduler;
 
 mod raft_proto {
     tonic::include_proto!("raft");
