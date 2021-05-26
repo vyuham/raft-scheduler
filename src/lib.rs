@@ -3,6 +3,7 @@
 
 mod config;
 pub mod node;
+pub mod raft;
 pub mod scheduler;
 
 mod raft_proto {

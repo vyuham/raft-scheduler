@@ -45,7 +45,7 @@ impl RaftCommand {
 }
 
 pub struct StateMachine {
-    executing: HashMap<u8, ExecUnit>,
+    executing: HashMap<u8, Vec<u8>>,
     free_nodes: Vec<u8>,
 }
 
@@ -59,13 +59,12 @@ impl StateMachine {
 
     pub fn run_cmd(&mut self, cmd: RaftCommand) -> Result<(), ScheduleError> {
         match cmd.task {
-            RaftTask::Schedule => {
+            RaftTask::Occupy => {
                 let node = cmd.node;
-                let data = ExecUnit::from_bytes(cmd.data.to_vec());
                 if self.free_nodes.contains(&node) {
                     if !self.executing.contains_key(&node) {
                         self.free_nodes.retain(|i| i != &node);
-                        self.executing.insert(node, data);
+                        self.executing.insert(node, cmd.data);
                         Ok(())
                     } else {
                         Err(ScheduleError("Couldn't schedule".to_string()))
@@ -73,8 +72,8 @@ impl StateMachine {
                 } else {
                     Err(ScheduleError("Couldn't occupy".to_string()))
                 }
-            },
-            RaftTask::UnSchedule => {
+            }
+            RaftTask::Vacate => {
                 let node = cmd.node;
                 if self.executing.contains_key(&node) {
                     if !self.free_nodes.contains(&node) {
@@ -87,7 +86,7 @@ impl StateMachine {
                 } else {
                     Err(ScheduleError("Couldn't unschedule".to_string()))
                 }
-            },
+            }
         }
     }
 }

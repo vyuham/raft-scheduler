@@ -1,90 +1,26 @@
-use crate::raft_proto::{
-    raft_client::RaftClient,
-    raft_server::{Raft, RaftServer},
-    Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
-};
 use rand::Rng;
-use std::{cmp::min, collections::HashMap, error::Error, sync::Arc};
-use tokio::{
-    sync::Mutex,
-    time::{Duration, Instant},
-};
+use std::{cmp::min, error::Error, sync::Arc};
+use tokio::{sync::Mutex,time::{Duration, Instant}};
 use tonic::{transport::Server, Request, Response, Status};
+
+use crate::{
+    raft::RaftDetails,
+    raft_proto::{
+        raft_server::{Raft, RaftServer},
+        Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
+    },
+};
 
 /// A trait to ensures interfaces necessart in types that can be transformed into byte based messages for
 /// easy transport over the network, ensuring raft based consensus of cluster state.
 pub trait RaftData {
     fn as_bytes(&self) -> Vec<u8>;
-}
-
-/// Possible server states within a raft cluster
-/// Follower: Can only respond to requests from nodes of cluster
-/// Candidate: Can only request to be elected Leader of cluster
-/// Leader: Operate until node failure, leads updates to state
-pub enum ServerState {
-    Follower,
-    Candidate,
-    Leader,
+    fn from(_: Vec<u8>) -> Self;
 }
 
 /// Details necessary to construct a node for raft consensus.
 pub struct RaftNode<T> {
-    details: Arc<RaftDetails<T>>,
-}
-
-struct RaftDetails<T> {
-    pub current_term: u64,
-    pub commit_index: Mutex<u64>,
-    pub voted_for: u8,
-    pub votes_recieved: HashMap<u8, bool>,
-    pub state: ServerState,
-    pub id: u8,
-    pub log: Mutex<Vec<(u64, T)>>,
-    pub cluster: Vec<String>,
-}
-
-impl<T: RaftData + Sync + Send + 'static> RaftDetails<T> {
-    pub fn new(id: u8, cluster: Vec<String>) -> Self {
-        Self {
-            current_term: 0,
-            commit_index: Mutex::new(0),
-            voted_for: id,
-            votes_recieved: HashMap::new(),
-            state: ServerState::Follower,
-            id,
-            log: Mutex::new(vec![]),
-            cluster,
-        }
-    }
-
-    pub async fn run(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
-        let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
-        loop {
-            if clock.elapsed() > Duration::from_secs(rng.gen_range(start..end)) {
-                clock = Instant::now();
-                self.start_election().await?;
-            }
-        }
-    }
-
-    async fn start_election(&mut self) -> Result<(), Box<dyn Error>> {
-        self.voted_for = self.id;
-        self.votes_recieved.insert(self.id, true);
-
-        for node in self.cluster.iter_mut() {
-            let res = RaftClient::connect(format!("http://{  }", node))
-                .await?
-                .request_vote(Request::new(VoteRequest {
-                    term: self.current_term + 1,
-                    id: self.id as u64,
-                    last_index: self.log.lock().await.len() as u64,
-                    last_term: self.current_term,
-                }))
-                .await;
-        }
-
-        Ok(())
-    }
+    details: Arc<Mutex<RaftDetails<T>>>,
 }
 
 impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
@@ -98,7 +34,7 @@ impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
         nodes.retain(|x| *x != local_addr);
 
         // Create shared state
-        let raft_details = Arc::new(RaftDetails::new(id, nodes));
+        let raft_details = Arc::new(Mutex::new(RaftDetails::new(id, nodes)));
 
         // State that is handed over the the server stub on this node
         let raft = Self {
@@ -118,6 +54,16 @@ impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
             details: raft_details,
         })
     }
+
+    pub async fn run(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+        let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
+        loop {
+            if clock.elapsed() > Duration::from_secs(rng.gen_range(start..end)) {
+                clock = Instant::now();
+                self.details.lock().await.start_election().await?;
+            }
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -127,20 +73,21 @@ impl<T: Sync + Send + 'static> Raft for RaftNode<T> {
         request: Request<VoteRequest>,
     ) -> Result<Response<VoteReply>, Status> {
         let request = request.into_inner();
-        if request.term < self.details.current_term {
+        let details = self.details.lock().await;
+        if request.term < details.current_term {
             return Ok(Response::new(VoteReply {
-                term: self.details.current_term,
+                term: details.current_term,
                 grant: false,
             }));
-        } else if self.details.voted_for == self.details.id {
+        } else if details.voted_for == details.id {
             return Ok(Response::new(VoteReply {
-                term: self.details.current_term,
+                term: details.current_term,
                 grant: true,
             }));
         }
 
         Ok(Response::new(VoteReply {
-            term: self.details.current_term,
+            term: details.current_term,
             grant: false,
         }))
     }
@@ -150,27 +97,27 @@ impl<T: Sync + Send + 'static> Raft for RaftNode<T> {
         request: Request<EntryRequest>,
     ) -> Result<Response<EntryReply>, Status> {
         let request = request.into_inner();
-        if request.term < self.details.current_term {
+        let mut details = self.details.lock().await;
+        if request.term < details.current_term {
             return Ok(Response::new(EntryReply {
-                term: self.details.current_term,
+                term: details.current_term,
                 success: false,
             }));
-        } else if request.prev_index > *self.details.commit_index.lock().await {
+        } else if request.prev_index > details.commit_index {
             return Ok(Response::new(EntryReply {
-                term: self.details.current_term,
+                term: details.current_term,
                 success: false,
             }));
-        } else if request.commit_index > *self.details.commit_index.lock().await {
-            let last_entry_index = match self.details.log.lock().await.last() {
+        } else if request.commit_index > details.commit_index {
+            let last_entry_index = match details.log.last() {
                 Some(entry) => entry.0,
                 None => 0,
             };
-            let mut commit_index = self.details.commit_index.lock().await;
-            *commit_index = min(request.commit_index, last_entry_index);
+            details.commit_index = min(request.commit_index, last_entry_index);
         }
 
         Ok(Response::new(EntryReply {
-            term: self.details.current_term,
+            term: details.current_term,
             success: true,
         }))
     }

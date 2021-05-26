@@ -1,13 +1,13 @@
+use std::{error::Error, sync::Arc};
 use tokio::sync::Mutex;
-use std::sync::Arc;
 
-use raft::scheduler::{StateMachine, RaftCommand};
+use raft::scheduler::{RaftCommand, StateMachine};
 
 #[derive(Debug, Copy, Clone)]
 pub enum ExecTask {
     /// Generate memory representation for 3D model of world,
     /// create multiple units of execution for rendering
-    UnRoll = 0,
+    Unroll = 0,
     /// Generate pixels from given units of execution and world
     Render = 1,
 }
@@ -32,35 +32,37 @@ impl ExecUnit {
     fn from_bytes(bytes: Vec<u8>) -> Self {
         Self {
             task: match bytes[0] {
-                1 => ExecTask::UnRoll,
-                2 => ExecTask::Render,
-                _ => ExecTask::RollUp,
+                0 => ExecTask::Unroll,
+                _ => ExecTask::Render,
             },
             data: bytes[1..].to_vec(),
         }
     }
 
     /// Execute the ExecUnit
-    async pub fn execute(&self) -> Result<(), Error> {
+    pub async fn execute(&self) -> Result<(), Box<dyn Error>> {
         match self.task {
             ExecTask::Unroll => {
                 // Generate memory representation of the world
                 // RTRCRS::create_world();
                 // Create individual ExecUnits for each pixel
-                for x in 0..400 {
+                for x in 0..400u16 {
                     for y in 0..225 {
                         let exec_unit = Self {
-                            task: ExecUnit::Render,
-                            data: vec![x >> 8 as u8, x as u8, y as u8],
+                            task: ExecTask::Render,
+                            data: vec![(x >> 8) as u8, x as u8, y as u8],
                         };
                         // queue.push(exec_unit.as_bytes());
                     }
                 }
-            },
+            }
             ExecTask::Render => {
-                let (i: u16, j: u16) = (self.data[0] << 8 | self.data[1], self.data[2] << 8 | self.data[3]);
+                let (i, j) = (
+                    (self.data[0] as u16) << 8 | self.data[1] as u16,
+                    self.data[2] as u16,
+                );
                 // RTRCRS::render(i, j);
-            },
+            }
         }
 
         Ok(())
@@ -68,13 +70,13 @@ impl ExecUnit {
 }
 
 struct Parallel {
-    s: Arc<Mutex<StateMachine>>
+    s: Arc<Mutex<StateMachine>>,
 }
 
 impl Parallel {
     pub fn new() -> Self {
         Self {
-            s: Arc::new(Mutex::new(StateMachine::new()))
+            s: Arc::new(Mutex::new(StateMachine::new())),
         }
     }
 
