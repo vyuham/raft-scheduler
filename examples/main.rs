@@ -88,5 +88,5 @@ impl Parallel {
 
 #[tokio::main]
 async fn main() {
-    Parallel::new().run().await;
+    Parallel::new().run(Config::new(0, 10, 15)).await;
 }

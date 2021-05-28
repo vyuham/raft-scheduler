@@ -1,9 +1,13 @@
 use rand::Rng;
 use std::{cmp::min, error::Error, sync::Arc};
-use tokio::{sync::Mutex,time::{Duration, Instant}};
+use tokio::{
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::{
+    config::Config,
     raft::RaftDetails,
     raft_proto::{
         raft_server::{Raft, RaftServer},
@@ -11,19 +15,12 @@ use crate::{
     },
 };
 
-/// A trait to ensures interfaces necessart in types that can be transformed into byte based messages for
-/// easy transport over the network, ensuring raft based consensus of cluster state.
-pub trait RaftData {
-    fn as_bytes(&self) -> Vec<u8>;
-    fn from(_: Vec<u8>) -> Self;
-}
-
 /// Details necessary to construct a node for raft consensus.
-pub struct RaftNode<T> {
-    details: Arc<Mutex<RaftDetails<T>>>,
+pub struct RaftNode {
+    details: Arc<Mutex<RaftDetails>>,
 }
 
-impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
+impl RaftNode {
     /// Starts a raft node, consisting of server and client gRPC stubs.
     pub async fn start(
         id: u8,
@@ -55,10 +52,10 @@ impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
         })
     }
 
-    pub async fn run(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn run(&mut self, config: Config) -> Result<(), Box<dyn Error>> {
         let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
         loop {
-            if clock.elapsed() > Duration::from_secs(rng.gen_range(start..end)) {
+            if clock.elapsed() > Duration::from_secs(config.new_rand_election_timeout()) {
                 clock = Instant::now();
                 self.details.lock().await.start_election().await?;
             }
@@ -67,7 +64,7 @@ impl<T: RaftData + Send + Sync + 'static> RaftNode<T> {
 }
 
 #[tonic::async_trait]
-impl<T: Sync + Send + 'static> Raft for RaftNode<T> {
+impl Raft for RaftNode {
     async fn request_vote(
         &self,
         request: Request<VoteRequest>,

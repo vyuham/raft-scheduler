@@ -1,10 +1,14 @@
 use std::{collections::HashMap, error::Error};
 use tonic::Request;
 
-use crate::{
-    node::RaftData,
-    raft_proto::{raft_client::RaftClient, VoteRequest},
-};
+use crate::raft_proto::{raft_client::RaftClient, VoteRequest};
+
+/// A trait to ensures interfaces necessart in types that can be transformed into byte based messages for
+/// easy transport over the network, ensuring raft based consensus of cluster state.
+pub trait RaftData {
+    fn as_bytes(&self) -> Vec<u8>;
+    fn from_bytes(_: Vec<u8>) -> Self;
+}
 
 /// Possible server states within a raft cluster
 /// Follower: Can only respond to requests from nodes of cluster
@@ -16,18 +20,18 @@ pub enum ServerState {
     Leader,
 }
 
-pub struct RaftDetails<T> {
+pub struct RaftDetails {
     pub current_term: u64,
     pub commit_index: u64,
     pub voted_for: u8,
     pub votes_recieved: HashMap<u8, bool>,
     pub state: ServerState,
     pub id: u8,
-    pub log: Vec<(u64, T)>,
+    pub log: Vec<(u64, Vec<u8>)>,
     pub cluster: Vec<String>,
 }
 
-impl<T: RaftData + Sync + Send + 'static> RaftDetails<T> {
+impl RaftDetails {
     pub fn new(id: u8, cluster: Vec<String>) -> Self {
         Self {
             current_term: 0,
