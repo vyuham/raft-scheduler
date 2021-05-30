@@ -44,12 +44,12 @@ impl RaftCommand {
     }
 }
 
-pub struct StateMachine {
+pub struct RaftStateMachine {
     executing: HashMap<u8, Vec<u8>>,
-    free_nodes: Vec<u8>,
+    pub free_nodes: Vec<u8>,
 }
 
-impl StateMachine {
+impl RaftStateMachine {
     pub fn new() -> Self {
         Self {
             executing: HashMap::new(),

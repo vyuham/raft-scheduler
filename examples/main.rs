@@ -1,7 +1,7 @@
 use std::{error::Error, sync::Arc};
 use tokio::sync::Mutex;
 
-use raft::scheduler::{RaftCommand, StateMachine};
+use raft::state_machine::{RaftCommand, RaftStateMachine};
 
 #[derive(Debug, Copy, Clone)]
 pub enum ExecTask {
@@ -70,13 +70,13 @@ impl ExecUnit {
 }
 
 struct Parallel {
-    s: Arc<Mutex<StateMachine>>,
+    s: Arc<Mutex<RaftStateMachine>>,
 }
 
 impl Parallel {
     pub fn new() -> Self {
         Self {
-            s: Arc::new(Mutex::new(StateMachine::new())),
+            s: Arc::new(Mutex::new(RaftStateMachine::new())),
         }
     }
 
@@ -88,5 +88,5 @@ impl Parallel {
 
 #[tokio::main]
 async fn main() {
-    Parallel::new().run(Config::new(0, 10, 15)).await;
+    Parallel::new().run().await;
 }

@@ -1,5 +1,4 @@
-use rand::Rng;
-use std::{cmp::min, error::Error, sync::Arc};
+use std::{cmp::min, error::Error, net::SocketAddr, sync::Arc};
 use tokio::{
     sync::Mutex,
     time::{Duration, Instant},
@@ -7,17 +6,16 @@ use tokio::{
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::{
-    config::Config,
-    raft::RaftDetails,
-    raft_proto::{
+    config::Config, raft::RaftDetails, raft_proto::{
         raft_server::{Raft, RaftServer},
         Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
-    },
+    }, state_machine::RaftStateMachine,
 };
 
 /// Details necessary to construct a node for raft consensus.
 pub struct RaftNode {
     details: Arc<Mutex<RaftDetails>>,
+    state: Arc<Mutex<RaftStateMachine>>,
 }
 
 impl RaftNode {
@@ -32,10 +30,12 @@ impl RaftNode {
 
         // Create shared state
         let raft_details = Arc::new(Mutex::new(RaftDetails::new(id, nodes)));
+        let raft_state = Arc::new(Mutex::new(RaftStateMachine::new()));
 
         // State that is handed over the the server stub on this node
         let raft = Self {
             details: raft_details.clone(),
+            state: raft_state.clone(),
         };
 
         // Server runs on a background thread and handles calls to the node
@@ -49,11 +49,13 @@ impl RaftNode {
 
         Ok(Self {
             details: raft_details,
+            state: raft_state,
         })
     }
 
-    pub async fn run(&mut self, config: Config) -> Result<(), Box<dyn Error>> {
-        let (mut clock, mut rng) = (Instant::now(), rand::thread_rng());
+    pub async fn run(&self, config: Config) -> Result<(), Box<dyn Error>> {
+        let mut clock = Instant::now();
+
         loop {
             if clock.elapsed() > Duration::from_secs(config.new_rand_election_timeout()) {
                 clock = Instant::now();
@@ -120,6 +122,14 @@ impl Raft for RaftNode {
     }
 
     async fn join(&self, request: Request<Byte>) -> Result<Response<Null>, Status> {
-        Ok(Response::new(Null {}))
+        if let Ok(str_addr) = String::from_utf8(request.into_inner().body) {
+            // Ensure addr is a SocketAddr
+            if let Ok(addr) = str_addr.parse::<SocketAddr>() {
+                self.details.lock().await.cluster.push(format!("{}", addr));
+                return Ok(Response::new(Null {}));
+            }
+        }
+
+        Err(Status::internal("Unable to join"))
     }
 }
