@@ -7,7 +7,7 @@ You can learn more about this algorithm [here](https://raft.github.io/), which i
 The significance of this implementation is to understand the levers and gears of the Raft algorithm and to serve as the backbone for the cloud native distributed parallel execution engine, RaEx(Rust Parallel Executor), which would essentially be the compute engine for our experimental Ray Tracer, [rtrcrs](https://github.com/vyuham/rtrcrs/).
 
 ## Architecture
-<p align="center"><img src="docs/scheduler.svg" width="350px"/></p>
+<p align="center"><img src="docs/scheduler.svg" width="500px"/></p>
 
 We make use of two types of *raft commands*, *Occupy* and *Vacate*, which are triggered by requests from a queue consisting of "To be scheduled" and "Completed" processes. Due to time constraints, we implement a soultion making use of the centralized queue, whereas it could be possible to use an alternative that fits in perfectly with out intent of building a completely distributed system.
 
