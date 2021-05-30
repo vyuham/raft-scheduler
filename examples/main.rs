@@ -81,7 +81,7 @@ impl Parallel {
     }
 
     pub async fn run(&self) {
-        let cmd = RaftCommand::from_bytes(vec![0, 1, 2, 3, 4]);
+        let cmd = RaftCommand::from_bytes(&vec![0, 1, 2, 3, 4]);
         print!("{:#?}", self.s.lock().await.run_cmd(cmd));
     }
 }

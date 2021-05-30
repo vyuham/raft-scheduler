@@ -6,16 +6,20 @@ use tokio::{
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::{
-    config::Config, raft::RaftDetails, raft_proto::{
+    config::Config,
+    raft::{RaftDetails, RaftLog},
+    raft_proto::{
         raft_server::{Raft, RaftServer},
         Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
-    }, state_machine::RaftStateMachine,
+    },
+    state_machine::RaftStateMachine,
 };
 
 /// Details necessary to construct a node for raft consensus.
 pub struct RaftNode {
     details: Arc<Mutex<RaftDetails>>,
     state: Arc<Mutex<RaftStateMachine>>,
+    log: Arc<Mutex<RaftLog>>,
 }
 
 impl RaftNode {
@@ -29,13 +33,14 @@ impl RaftNode {
         nodes.retain(|x| *x != local_addr);
 
         // Create shared state
-        let raft_details = Arc::new(Mutex::new(RaftDetails::new(id, nodes)));
+        let (raft_details, raft_log) = RaftDetails::new(id, nodes);
         let raft_state = Arc::new(Mutex::new(RaftStateMachine::new()));
 
         // State that is handed over the the server stub on this node
         let raft = Self {
             details: raft_details.clone(),
             state: raft_state.clone(),
+            log: raft_log.clone(),
         };
 
         // Server runs on a background thread and handles calls to the node
@@ -50,11 +55,15 @@ impl RaftNode {
         Ok(Self {
             details: raft_details,
             state: raft_state,
+            log: raft_log,
         })
     }
 
     pub async fn run(&self, config: Config) -> Result<(), Box<dyn Error>> {
         let mut clock = Instant::now();
+        let (state, log) = (self.state.clone(), self.log.clone());
+
+        RaftStateMachine::updater(state, log);
 
         loop {
             if clock.elapsed() > Duration::from_secs(config.new_rand_election_timeout()) {
@@ -108,7 +117,7 @@ impl Raft for RaftNode {
                 success: false,
             }));
         } else if request.commit_index > details.commit_index {
-            let last_entry_index = match details.log.last() {
+            let last_entry_index = match details.log.lock().await.last() {
                 Some(entry) => entry.0,
                 None => 0,
             };

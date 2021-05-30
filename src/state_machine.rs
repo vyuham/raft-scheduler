@@ -1,4 +1,7 @@
-use std::{collections::HashMap, error::Error, fmt};
+use std::{collections::HashMap, error::Error, fmt, sync::Arc};
+use tokio::sync::Mutex;
+
+use crate::raft::RaftLog;
 
 #[derive(Debug, Copy, Clone)]
 pub enum RaftTask {
@@ -28,7 +31,7 @@ impl RaftCommand {
         vec
     }
 
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+    pub fn from_bytes(bytes: &Vec<u8>) -> Self {
         // Generate RaftCommand from recieved byte stream
         Self {
             // Use task_bit from initial byte to determine task type
@@ -88,6 +91,24 @@ impl RaftStateMachine {
                 }
             }
         }
+    }
+
+    pub fn updater(
+        state: Arc<Mutex<RaftStateMachine>>,
+        log: Arc<Mutex<RaftLog>>,
+    ) {
+        let mut commit_index = 0;
+        tokio::spawn(async move {
+            loop {
+                if let Some((_, cmd)) = log.lock().await.iter().nth(commit_index) {
+                    state
+                        .lock()
+                        .await
+                        .run_cmd(RaftCommand::from_bytes(cmd));
+                    commit_index += 1;
+                }
+            }
+        });
     }
 }
 

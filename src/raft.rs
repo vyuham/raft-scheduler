@@ -1,4 +1,5 @@
-use std::{collections::HashMap, error::Error};
+use std::{collections::HashMap, error::Error, sync::Arc};
+use tokio::sync::Mutex;
 use tonic::Request;
 
 use crate::raft_proto::{raft_client::RaftClient, VoteRequest};
@@ -20,6 +21,8 @@ pub enum ServerState {
     Leader,
 }
 
+pub type RaftLog = Vec<(u64, Vec<u8>)>;
+
 pub struct RaftDetails {
     pub current_term: u64,
     pub commit_index: u64,
@@ -27,22 +30,26 @@ pub struct RaftDetails {
     pub votes_recieved: HashMap<u8, bool>,
     pub state: ServerState,
     pub id: u8,
-    pub log: Vec<(u64, Vec<u8>)>,
+    pub log: Arc<Mutex<RaftLog>>,
     pub cluster: Vec<String>,
 }
 
 impl RaftDetails {
-    pub fn new(id: u8, cluster: Vec<String>) -> Self {
-        Self {
-            current_term: 0,
-            commit_index: 0,
-            voted_for: id,
-            votes_recieved: HashMap::new(),
-            state: ServerState::Follower,
-            id,
-            log: vec![],
-            cluster,
-        }
+    pub fn new(id: u8, cluster: Vec<String>) -> (Arc<Mutex<Self>>, Arc<Mutex<RaftLog>>) {
+        let log = Arc::new(Mutex::new(RaftLog::new()));
+        (
+            Arc::new(Mutex::new(Self {
+                current_term: 0,
+                commit_index: 0,
+                voted_for: id,
+                votes_recieved: HashMap::new(),
+                state: ServerState::Follower,
+                id,
+                log: log.clone(),
+                cluster,
+            })),
+            log,
+        )
     }
 
     pub async fn start_election(&mut self) -> Result<(), Box<dyn Error>> {
@@ -55,7 +62,7 @@ impl RaftDetails {
                 .request_vote(Request::new(VoteRequest {
                     term: self.current_term + 1,
                     id: self.id as u64,
-                    last_index: self.log.len() as u64,
+                    last_index: self.log.lock().await.len() as u64,
                     last_term: self.current_term,
                 }))
                 .await;
