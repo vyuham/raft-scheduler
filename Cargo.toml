@@ -1,17 +1,15 @@
 [package]
-name = "raft"
+name = "scheduler"
 version = "0.1.0"
 authors = ["Devdutt Shenoi <devdutt@outlook.in>"]
 edition = "2018"
 
 [dependencies]
+async-raft = "0.6"
 tokio = { version = "1.5", features = ["full"] }
-tokio-test = "0.4"
-bytes = "1"
 tonic = "0.4"
 prost = "0.7"
-rand = "0.8"
-serde = { version="1", features=["derive"] }
+serde = "1.0"
 
 [build-dependencies]
 tonic-build = "0.4"

@@ -1,73 +1,45 @@
-use std::{collections::HashMap, error::Error, sync::Arc};
-use tokio::sync::Mutex;
-use tonic::Request;
-
-use crate::raft_proto::{raft_client::RaftClient, VoteRequest};
-
-/// A trait to ensures interfaces necessart in types that can be transformed into byte based messages for
-/// easy transport over the network, ensuring raft based consensus of cluster state.
-pub trait RaftData {
-    fn as_bytes(&self) -> Vec<u8>;
-    fn from_bytes(_: Vec<u8>) -> Self;
-}
-
-/// Possible server states within a raft cluster
-/// Follower: Can only respond to requests from nodes of cluster
-/// Candidate: Can only request to be elected Leader of cluster
-/// Leader: Operate until node failure, leads updates to state
-pub enum ServerState {
-    Follower,
-    Candidate,
-    Leader,
-}
-
 pub type RaftLog = Vec<(u64, Vec<u8>)>;
 
-pub struct RaftDetails {
-    pub current_term: u64,
-    pub commit_index: u64,
-    pub voted_for: u8,
-    pub votes_recieved: HashMap<u8, bool>,
-    pub state: ServerState,
-    pub id: u8,
-    pub log: Arc<Mutex<RaftLog>>,
-    pub cluster: Vec<String>,
+#[derive(Debug, Copy, Clone)]
+pub enum RaftTask {
+    Occupy = 1,
+    Vacate = 0,
 }
 
-impl RaftDetails {
-    pub fn new(id: u8, cluster: Vec<String>) -> (Arc<Mutex<Self>>, Arc<Mutex<RaftLog>>) {
-        let log = Arc::new(Mutex::new(RaftLog::new()));
-        (
-            Arc::new(Mutex::new(Self {
-                current_term: 0,
-                commit_index: 0,
-                voted_for: id,
-                votes_recieved: HashMap::new(),
-                state: ServerState::Follower,
-                id,
-                log: log.clone(),
-                cluster,
-            })),
-            log,
-        )
+pub struct RaftCommand {
+    /// Denotes task type
+    pub task: RaftTask,
+    /// Node ID, a 7bit number
+    pub node: u8,
+    /// Payload carried, an ExecTask
+    pub data: Vec<u8>,
+}
+
+impl RaftCommand {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        // Compress task and node detals into initial byte for messaging
+        let task_node_byte = (self.task as u8) << 7 | self.node;
+        let mut vec = vec![];
+        vec.push(task_node_byte);
+        // Push all data into message stream
+        for data in self.data.iter() {
+            vec.push(*data);
+        }
+        vec
     }
 
-    pub async fn start_election(&mut self) -> Result<(), Box<dyn Error>> {
-        self.voted_for = self.id;
-        self.votes_recieved.insert(self.id, true);
-
-        for node in self.cluster.iter_mut() {
-            let res = RaftClient::connect(format!("http://{  }", node))
-                .await?
-                .request_vote(Request::new(VoteRequest {
-                    term: self.current_term + 1,
-                    id: self.id as u64,
-                    last_index: self.log.lock().await.len() as u64,
-                    last_term: self.current_term,
-                }))
-                .await;
+    pub fn from_bytes(bytes: &Vec<u8>) -> Self {
+        // Generate RaftCommand from recieved byte stream
+        Self {
+            // Use task_bit from initial byte to determine task type
+            task: match bytes[0] >> 7 {
+                1 => RaftTask::Occupy,
+                _ => RaftTask::Vacate,
+            },
+            // Remove task_bit and use rest of initial byte to determine node
+            node: bytes[0] << 1 >> 1,
+            // Use rest of byte stream as data payload
+            data: bytes[1..].to_vec(),
         }
-
-        Ok(())
     }
 }

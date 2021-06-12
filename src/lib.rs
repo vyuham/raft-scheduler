@@ -1,11 +1,20 @@
-//! RaEx is a tool to help you build high performance compute clusters, with which you can run
-//! computational tasks that would otherwise be incredibly inefficient on a single system.
+use std::{error::Error, fmt};
 
-pub mod config;
-pub mod node;
-pub mod raft;
-pub mod state_machine;
+mod node;
+mod raft;
+mod state;
 
 mod raft_proto {
     tonic::include_proto!("raft");
+}
+
+#[derive(Debug)]
+pub struct ScheduleError(String);
+
+impl Error for ScheduleError {}
+
+impl fmt::Display for ScheduleError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Scheduling error: {}", self.0)
+    }
 }
