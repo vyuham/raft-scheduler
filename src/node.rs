@@ -1,44 +1,63 @@
-use async_raft::{AppData, NodeId};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
+use tonic::{transport::Channel, Request};
 
-use crate::{raft::RaftLog, state::RaftStateMachine};
+use crate::raft_proto::{raft_client::RaftClient, Byte};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RaftData {}
+pub mod client;
+pub mod server;
 
-impl AppData for RaftData {}
+use client::RaftClientStub;
+use server::RaftServerStub;
 
-/// Details necessary to construct a node for raft consensus.
+pub struct RaftNodeInner {}
+
 pub struct RaftNode {
-    state: Arc<Mutex<RaftStateMachine>>,
-    log: Arc<Mutex<RaftLog>>,
+    pub client: RaftClientStub,
 }
 
-pub fn ip_node(ip: &str) -> NodeId {
-    let mut ip: Vec<&str> = ip.split(":").collect();
-    let mut id = ip[1].parse::<u64>().unwrap();
-    ip = ip[0].split(".").collect();
-    id += {
-        let (mut id, mut x) = (0, 56u64);
-        for i in 0..4 {
-            id += ip[i].parse::<u64>().unwrap() << x;
-            x -= 8;
+impl RaftNode {
+    pub async fn new(self_addr: String, client_addrs: Vec<String>) -> Self {
+        let mut clients = HashMap::new();
+        for addr in client_addrs {
+            clients.insert(addr.clone(), try_add(addr).await);
         }
-        id
-    };
 
-    id
+        for (_, c) in clients.iter_mut() {
+            match c
+                .join(Request::new(Byte {
+                    body: self_addr.clone().into_bytes(),
+                }))
+                .await
+            {
+                Ok(_) => println!("r"),
+                Err(_) => println!("Error joining"),
+            }
+        }
+
+        let clients = Arc::new(Mutex::new(clients));
+        let clients_clone = clients.clone();
+
+        tokio::spawn(async move {
+            RaftServerStub::new(clients_clone)
+                .start_server(self_addr)
+                .await;
+        });
+
+        Self {
+            client: RaftClientStub::new(clients).await,
+        }
+    }
 }
 
-pub fn node_ip(id: NodeId) -> String {
-    format!(
-        "{}.{}.{}.{}:{}", // aaa.bbb.ccc.ddd:eee...
-        id >> 56 as u8,   // aaa
-        id >> 48 as u8,   // bbb
-        id >> 40 as u8,   // ccc
-        id >> 32 as u8,   // ddd
-        id as u32,        // eee...
-    )
+pub async fn try_add(addr: String) -> RaftClient<Channel> {
+    loop {
+        match RaftClient::connect(format!("http://{}", addr)).await {
+            Ok(c) => {
+                println!("connected to {}", addr);
+                return c;
+            }
+            Err(_) => continue,
+        }
+    }
 }
