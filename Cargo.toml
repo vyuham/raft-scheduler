@@ -8,6 +8,9 @@ edition = "2018"
 tokio = { version = "1.5", features = ["full"] }
 tonic = "0.4"
 prost = "0.7"
+async-raft = "0.6.1"
+serde = "1"
+anyhow = "1"
 
 [build-dependencies]
 tonic-build = "0.4"
