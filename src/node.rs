@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_raft::{AppData, AppDataResponse, Config, raft::Raft};
+use async_raft::{raft::Raft, AppData, AppDataResponse, Config};
 use serde::{Deserialize, Serialize};
 
 use crate::{log::RaftLog, rpc::RaftRPC};

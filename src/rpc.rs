@@ -61,7 +61,6 @@ impl RaftRPC {
     }
 }
 
-
 pub async fn try_add(addr: String) -> RaftClient<Channel> {
     loop {
         match RaftClient::connect(format!("http://{}", addr)).await {
@@ -73,7 +72,6 @@ pub async fn try_add(addr: String) -> RaftClient<Channel> {
         }
     }
 }
-
 
 #[async_trait::async_trait]
 impl RaftNetwork<RaftRequest> for RaftRPC {

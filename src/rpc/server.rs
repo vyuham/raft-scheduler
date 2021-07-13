@@ -6,12 +6,12 @@ use tonic::{
 };
 
 use super::{
-    try_add,
     raft_proto::{
         raft_client::RaftClient,
         raft_server::{Raft, RaftServer},
         Byte, EntryReply, EntryRequest, Null, VoteReply, VoteRequest,
     },
+    try_add,
 };
 
 pub struct RaftServerStub {
