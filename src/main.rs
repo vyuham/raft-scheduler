@@ -6,10 +6,5 @@ async fn main() {
     let addr = args[1].clone();
     println!("Starting {}", addr);
 
-    let mut raft = RaftNode::new(addr, args[2..].to_vec()).await;
-
-    loop {
-        raft.client.request().await;
-        raft.client.append().await;
-    }
+    let mut raft = RaftNode::new();
 }

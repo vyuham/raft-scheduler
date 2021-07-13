@@ -5,8 +5,8 @@ use tonic::{
     Request, Response, Status,
 };
 
-use crate::{
-    node::try_add,
+use super::{
+    try_add,
     raft_proto::{
         raft_client::RaftClient,
         raft_server::{Raft, RaftServer},

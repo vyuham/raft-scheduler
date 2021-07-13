@@ -1,7 +1,5 @@
-mod raft_proto {
-    tonic::include_proto!("raft");
-}
-
 mod node;
+mod rpc;
+mod log;
 
 pub use node::RaftNode;
