@@ -6,5 +6,5 @@ async fn main() {
     let addr = args[1].clone();
     println!("Starting {}", addr);
 
-    let mut raft = RaftNode::new();
+    let raft = RaftNode::new(addr);
 }
