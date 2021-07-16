@@ -5,6 +5,8 @@ use tonic::{
     Request, Response, Status,
 };
 
+use crate::RaftNode;
+
 use super::{
     raft_proto::{
         raft_client::RaftClient,
@@ -15,11 +17,11 @@ use super::{
 };
 
 pub struct RaftServerStub {
-    clients: Arc<Mutex<HashMap<String, RaftClient<Channel>>>>,
+    clients: Arc<Mutex<HashMap<u64, RaftClient<Channel>>>>,
 }
 
 impl RaftServerStub {
-    pub fn new(clients: Arc<Mutex<HashMap<String, RaftClient<Channel>>>>) -> Self {
+    pub fn new(clients: Arc<Mutex<HashMap<u64, RaftClient<Channel>>>>) -> Self {
         Self { clients }
     }
 
@@ -64,10 +66,11 @@ impl Raft for RaftServerStub {
         let addr = String::from_utf8(req).unwrap();
         println!("Adding {} to client list", addr);
         let mut clients = self.clients.lock().await;
-        if let Some(_) = clients.keys().find(|&x| x == &addr) {
+        let id = RaftNode::addr_id(addr.clone());
+        if let Some(_) = clients.keys().find(|&&x| x == id) {
             Err(Status::already_exists("Client is already connected"))
         } else {
-            clients.insert(addr.clone(), try_add(addr).await);
+            clients.insert(id, try_add(addr).await);
             Ok(Response::new(Null {}))
         }
     }

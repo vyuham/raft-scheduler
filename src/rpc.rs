@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 use tonic::{transport::Channel, Request};
 
-use crate::node::RaftRequest;
+use crate::{node::RaftRequest, RaftNode};
 
 mod raft_proto {
     tonic::include_proto!("raft");
@@ -31,7 +31,7 @@ impl RaftRPC {
     pub async fn new(self_addr: String, client_addrs: Vec<String>) -> Self {
         let mut clients = HashMap::new();
         for addr in client_addrs {
-            clients.insert(addr.clone(), try_add(addr).await);
+            clients.insert(RaftNode::addr_id(addr.clone()), try_add(addr).await);
         }
 
         for (_, c) in clients.iter_mut() {
@@ -80,7 +80,10 @@ impl RaftNetwork<RaftRequest> for RaftRPC {
         target: NodeId,
         rpc: AppendEntriesRequest<RaftRequest>,
     ) -> anyhow::Result<AppendEntriesResponse> {
-        Err(anyhow::anyhow!("Nah"))
+        match self.client.append_entries(target, rpc).await {
+            Some(res) => Ok(res),
+            None => Err(anyhow::anyhow!("No reply")),
+        }
     }
 
     async fn install_snapshot(

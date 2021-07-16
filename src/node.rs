@@ -9,12 +9,18 @@ use serde::{Deserialize, Serialize};
 use crate::{log::RaftLog, rpc::RaftRPC};
 
 pub struct RaftNode {
-    raft: Raft<RaftRequest, RaftResponse, RaftRPC, RaftLog>,
+    pub raft: Raft<RaftRequest, RaftResponse, RaftRPC, RaftLog>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RaftRequest {
     data: Vec<u8>,
+}
+
+impl RaftRequest {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.data.clone()
+    }
 }
 
 impl AppData for RaftRequest {}
